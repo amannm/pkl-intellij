@@ -15,7 +15,7 @@ intellijRunIde = "2024.2"
 intellijPlugin = "1.17.4"
 intellijSinceBuild = "231"
 # set to "999.*" to disable upper bound
-intellijUntilBuild = "242.*"
+intellijUntilBuild = "243.*"
 # Grammar-Kit isn't compatible with 1.7.0-2
 jflex = "1.7.0-1"
 # use same version that ships with `intellijSinceBuild`
@@ -25,7 +25,7 @@ kotlinSerialization = "1.9.0"
 # bump when kotlin version bumps
 kotlinx = "1.5.1"
 # fallback if stdlib isn't found in IntelliJ project dependencies
-pkl = "0.26.0"
+pkl = "0.27.0"
 spotless = "6.21.0"
 
 [libraries] # ordered alphabetically
