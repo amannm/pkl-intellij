@@ -103,6 +103,7 @@
     <lang.importOptimizer language="Pkl" implementationClass="org.pkl.intellij.PklImportOptimizer"/>
     <lang.refactoringSupport language="Pkl" implementationClass="org.pkl.intellij.PklRefactoringSupportProvider"/>
     <moveFileHandler implementation="org.pkl.intellij.MovePklModuleHandler" order="first"/>
+    <refactoring.moveHandler implementation="org.pkl.intellij.PklMoveFilesOrDirectoriesHandler" order="first"/>
 
     <regExpLanguageHost forClass="org.pkl.intellij.psi.impl.PklStringContentImpl"
                         implementationClass="org.pkl.intellij.regex.PklRegexLanguageHost"/>

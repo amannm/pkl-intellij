@@ -15,6 +15,9 @@
  */
 package org.pkl.intellij
 
+import java.net.URI
+import java.nio.file.Path
+import java.util.*
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.util.Key
@@ -27,14 +30,11 @@ import com.intellij.refactoring.util.MoveRenameUsageInfo
 import com.intellij.usageView.UsageInfo
 import com.intellij.util.IncorrectOperationException
 import com.intellij.util.withPath
-import java.net.URI
-import java.nio.file.Path
-import java.util.*
 import org.pkl.intellij.psi.*
 
-class MovePklModuleHandler : MoveFileHandler() {
+val originalModuleDirectoryKey: Key<Path> = Key.create("ORIGINAL_MODULE_DIRECTORY")
 
-  private val originalModuleDirectoryKey: Key<Path> = Key.create("ORIGINAL_MODULE_DIRECTORY")
+class MovePklModuleHandler : MoveFileHandler() {
 
   override fun canProcessElement(element: PsiFile): Boolean {
     return element is PklModule
@@ -46,8 +46,11 @@ class MovePklModuleHandler : MoveFileHandler() {
     oldToNewMap: MutableMap<PsiElement, PsiElement>
   ) {
     if (file is PklModule) {
-      val moduleDirectoryPath = file.originalFile.virtualFile?.toNioPath()?.toAbsolutePath()?.parent ?: return
-      file.putUserData(originalModuleDirectoryKey, moduleDirectoryPath)
+      val originalModuleDirectory = file.getUserData(originalModuleDirectoryKey)
+      if (originalModuleDirectory == null) {
+        val moduleDirectoryPath = file.containingDirectory?.virtualFile?.toNioPath()?.toAbsolutePath() ?: return
+        file.putUserData(originalModuleDirectoryKey, moduleDirectoryPath)
+      }
     }
   }
 
@@ -58,7 +61,9 @@ class MovePklModuleHandler : MoveFileHandler() {
     searchInNonJavaFiles: Boolean
   ): List<UsageInfo>? {
     val searchScope = GlobalSearchScope.projectScope(psiFile.project)
-    return ReferencesSearch.search(psiFile, searchScope, false)
+    val usages = ReferencesSearch.search(psiFile, searchScope, false)
+      .asSequence()
+      .filterIsInstance<PklModuleUriReference>()
       .distinct()
       .map {
         val range = it.rangeInElement
@@ -66,6 +71,7 @@ class MovePklModuleHandler : MoveFileHandler() {
       }
       .toList()
       .ifEmpty { null }
+    return usages
   }
 
   override fun retargetUsages(
@@ -73,10 +79,15 @@ class MovePklModuleHandler : MoveFileHandler() {
     oldToNewMap: Map<PsiElement, PsiElement>
   ) {
     usageInfos.filterIsInstance<MoveRenameUsageInfo>().forEach {
-      val element = it.referencedElement as? PklModuleUri ?: return@forEach
-      val reference = it.getReference() as? PklModuleUriReference ?: return@forEach
+      val ref = it.reference as? PklModuleUriReference ?: return@forEach
+      val ele = it.referencedElement as? PklModule ?: return@forEach
       try {
-        reference.bindToElement(element)
+        // the module containing the ref itself is being moved
+        val refModule = ref.element.containingFile
+        val refModuleMoving = refModule.getUserData(originalModuleDirectoryKey) != null
+        if (!refModuleMoving) {
+          ref.bindToElement(ele)
+        }
       } catch (ex: IncorrectOperationException) {
         LOG.error(ex)
       }
@@ -87,14 +98,14 @@ class MovePklModuleHandler : MoveFileHandler() {
   override fun updateMovedFile(file: PsiFile) {
     if (file is PklModule) {
       val oldModuleDirectoryPath = file.removeUserData(originalModuleDirectoryKey) ?: return
-      val newModuleDirectoryPath =
-        file.originalFile.virtualFile?.toNioPath()?.toAbsolutePath()?.parent ?: return
-      val offsetPath = newModuleDirectoryPath.relativize(oldModuleDirectoryPath).normalize()
-      WriteCommandAction.writeCommandAction(file.project).compute<
-        Array<PsiElement>, RuntimeException
-      > {
-        file.imports.forEach { import -> rewriteRelativeImport(import, offsetPath) }
-        arrayOf(file)
+      val imports = file.imports.toList()
+      if (imports.isNotEmpty()) {
+        val newModuleDirectoryPath = file.containingDirectory?.virtualFile?.toNioPath()?.toAbsolutePath() ?: return
+        val offsetPath = newModuleDirectoryPath.relativize(oldModuleDirectoryPath).normalize()
+        WriteCommandAction.writeCommandAction(file.project).compute<Array<PsiElement>, RuntimeException> {
+          imports.forEach { import -> rewriteRelativeImport(import, offsetPath) }
+          arrayOf(file)
+        }
       }
     }
   }
